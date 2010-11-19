@@ -10,8 +10,8 @@ class EpidemySimulator extends Simulator {
     val roomRows: Int = 8
     val roomColumns: Int = 8
 
-    //val prevalenceRate = 0.01
-    val prevalenceRate = 0.05
+    val prevalenceRate = 0.01
+    //val prevalenceRate = 0.05
     val deathRate = 0.25
     val infectionRate = 0.4
 
@@ -50,12 +50,8 @@ class EpidemySimulator extends Simulator {
       persons = new Person(x) :: persons
   )
 
-  (0 until (population * prevalenceRate).toInt) foreach(x =>
-      persons(x) infect
-  )
-
   class Person (val id: Int) {
-    var infected = false
+    var infected = (random <= prevalenceRate)
     var sick = false
     var immune = false
     var dead = false
