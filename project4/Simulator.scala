@@ -124,15 +124,17 @@ abstract class CircuitSimulator extends Simulator {
           List(in)
       }
     }
-    val ourOut = demux0(in, c)
-    ourOut.zip(out).foreach(_ match {
-      case (input, output) => input addAction(() => output.setSignal(input.getSignal))
-    })
+    connectWires(demux0(in, c), out)
   }
 
-  //
-  // to complete with orGates and demux...
-  //
+  def connectWires(input: List[Wire], output: List[Wire]) {
+    input.zip(output).foreach(pair => connectWire(pair._1, pair._2))
+  }
+
+  def connectWire(input: Wire, output: Wire) {
+    input addAction(() => output.setSignal(input.getSignal))
+  }
+  
 }
 
 object concreteCircuit extends CircuitSimulator {
@@ -210,10 +212,6 @@ object concreteCircuit extends CircuitSimulator {
     in2.setSignal(false)
     run
   }
-
-  //
-  // to complete with orGateExample and demuxExample...
-  //
 }
 
 object test extends Application {

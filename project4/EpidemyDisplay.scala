@@ -169,6 +169,7 @@ object EpidemyDisplay extends EpidemySimulator with Application {
           frame.repaint()
           next
           val previousTime = currentTime
+          println("agenda has " + agenda.length + " items o/ head.time = " + agenda.head.time)
           while (!agenda.isEmpty && agenda.head.time == previousTime) next
         }
         else if (historyContinues && !history.isEmpty) history = history.head :: history
