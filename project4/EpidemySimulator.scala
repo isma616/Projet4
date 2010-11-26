@@ -5,54 +5,92 @@ import Grid._
 
 class EpidemySimulator extends Simulator {
 
+  // Determine the average number of dead people after 150 days over a set of 5 experiment runs.
+  // 1st run: 69
+  // 2nd run: 62
+  // 3rd run: 76
+  // 4th run: 0
+  // 5th run: 69
+  // Mean = 55.2 deaths
+
+  // With air traffic:
+  // 1st run: 77
+  // 2nd run: 77
+  // 3rd run: 89
+  // 4th run: 84
+  // 5th run: 82
+  // Mean = 81.8 deaths
+
+  // Reduce mobility act, with air traffic:
+  // 1st run: 62
+  // 2nd run: 71
+  // 3rd run: 20
+  // 4th run: 53
+  // 5th run: 55
+  // Mean = 52.2 deaths
+
+  // Chosen few act, with air traffic:
+  // 1st run: 72
+  // 2nd run: 0
+  // 3rd run: 82
+  // 4th run: 74
+  // 5th run: 74
+  // Mean = 60.4 deaths
+
   protected object SimConfig {
     val population: Int = 300
-    val roomRows: Int = 8
+    val roomRows   : Int = 8
     val roomColumns: Int = 8
 
-    //val prevalenceRate = 0.01
-    val prevalenceRate = 0.05
+    val prevalenceRate = 0.01
     val deathRate = 0.25
     val infectionRate = 0.4
 
-    // to complete: additional parameters of simulation
+    val airplanes = true
+    val airplaneProbability = 0.01
+
+    val chosenFew = true
+    val vipRate = 0.05
+    
+    val reduceMobility = false
   }
 
   import SimConfig._
 
-  var persons: List[Person] = List() // to complete: construct list of persons
+  var persons: List[Person] = List()
+
+  def forPersons(row: Int, col: Int, action: (Person) => Boolean) = {
+    def forPersons0(persons: List[Person]): Boolean = persons match {
+      case x :: xs =>
+        if(x.row == row && x.col == col && action(x)) {
+          true
+        } else forPersons0(xs)
+      case Nil => {
+        false
+      }
+    }
+    forPersons0(persons)
+  }
 
   def isDangerous(row: Int, col: Int): Boolean = {
-    def isDangerous0(persons: List[Person]): Boolean = persons match {
-      case x :: xs =>
-         if(x.infected && x.row == row && x.col == col)
-           true
-         else
-           isDangerous0(xs)
-      case Nil => false
-    }
-    isDangerous0(persons)
+    forPersons(row, col, x => x.infected)
   }
 
   def isContagious(row: Int, col: Int): Boolean = {
-    def isContagious0(persons: List[Person]): Boolean = persons match {
-      case x :: xs =>
-         if((x.infected || x.sick) && x.row == row && x.col == col)
-           true
-         else
-           isContagious0(xs)
-      case Nil => false
-    }
-    isContagious0(persons)
+    forPersons(row, col, x => x.infected || x.sick || x.dead)
   }
 
-  (0 until population) foreach(x =>
-      persons = new Person(x) :: persons
-  )
+  def contaminate(row: Int, col: Int, exception: Int) {
+    forPersons(row, col, x => {
+      if(x.id != exception && random <= infectionRate) x.infect
+      false
+    })
+  }
 
-  (0 until (population * prevalenceRate).toInt) foreach(x =>
-      persons(x) infect
-  )
+  (0 until population) foreach(x => {
+      val person = new Person(x)
+      persons = person :: persons
+  })
 
   class Person (val id: Int) {
     var infected = false
@@ -64,29 +102,60 @@ class EpidemySimulator extends Simulator {
     var row: Int = (random * roomRows).toInt
     var col: Int = (random * roomColumns).toInt
 
+    var nextRow: Int = row
+    var nextCol: Int = col
+
     def scheduleMove {
       // 1. After each move (and also after the beginning of the simulation), a person moves to one
       // of their neighbouring rooms within the next 5 days (with equally distributed probability).
       // Note that the first row is considered to be a neighbour of row eight (and vice versa) ; anal-
       // ogously, the first column is a neighbour of column eight (and vice versa).
-      afterDelay(1 + (random * 4).toInt)(move)
+      val proba = 1 + (random * 4).toInt
+      afterDelay(if(reduceMobility) (if(sick) proba * 4 else proba * 2) else proba)(move)
     }
 
     def move {
       if(!dead) {
-        val horizontal = (random <= 0.5)
-        val newRow = if (horizontal)  ((random * 2).toInt - 1 + row + roomRows   ) % roomRows    else row
-        val newCol = if (!horizontal) ((random * 2).toInt - 1 + col + roomColumns) % roomColumns else col
-        
-        if(!isDangerous(newRow, newCol)) {
-          row = newRow
-          col = newCol
+        def testMove(newRow: Int, newCol: Int): Boolean = {
+          if(!isDangerous(newRow, newCol)) {
+            nextRow = newRow
+            nextCol = newCol
+            // apply decisions at the end
+            afterDelay(0)(applyDecisions)
+            return true
+          }
+          false
         }
-        if(!dead && !sick && !infected && isContagious(row, col) && random <= infectionRate) {
-          infected = true
+
+        val moves = scala.util.Random.shuffle(List(
+          ((row - 1 + roomRows) % roomRows, col),
+          ((row + 1)            % roomRows, col),
+          (row, (col + 1)               % roomColumns),
+          (row, (col - 1 + roomColumns) % roomColumns)
+        ))
+
+        def testMoves(): Unit = for(m <- moves) {
+            if(testMove(m._1, m._2)) return
+        }
+        testMoves()
+        
+        if(airplanes && random <= airplaneProbability) {
+          nextRow = (random * (roomRows   )).asInstanceOf[Int]
+          nextCol = (random * (roomColumns)).asInstanceOf[Int]
+          afterDelay(0)(applyDecisions)
         }
       }
       scheduleMove
+    }
+
+    def applyDecisions {
+      // move
+      row = nextRow
+      col = nextCol
+
+      // if there are contagious people (infected sick or dead) we might get infected ourselves!
+      if(isContagious(row, col) && random <= infectionRate)
+        infect
     }
 
     def sicken {
@@ -117,6 +186,8 @@ class EpidemySimulator extends Simulator {
     }
 
     def infect {
+      if(immune || dead || infected) return
+
       //println(id + " is now infected!")
 
       // 4. When a person becomes infected, he does not immediately get sick, but enters a phase of
@@ -140,6 +211,10 @@ class EpidemySimulator extends Simulator {
     }
 
     scheduleMove
+
+    if(chosenFew && random <= vipRate) immune = true
+    if(random <= prevalenceRate) infect
+
   }
 
 }

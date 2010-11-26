@@ -7,10 +7,11 @@ import java.awt.event.{ActionListener, ActionEvent}
 
 object EpidemyDisplay extends EpidemySimulator with Application {
 
-  class Situation(var healthy: Int, var sick: Int, var immune: Int) {
-    def reset { healthy = 0; sick = 0; immune = 0 }
+  class Situation(var healthy: Int, var sick: Int, var immune: Int, var dead: Int) {
+    def reset { healthy = 0; sick = 0; immune = 0; dead = 0 }
     def count(p: Person) {
       if (p.immune) immune += 1
+      else if(p.dead) dead += 1
       else if (p.sick) sick += 1
       else healthy += 1
     }
@@ -19,7 +20,7 @@ object EpidemyDisplay extends EpidemySimulator with Application {
 
   var world: Grid[Situation] = new Grid[Situation](SimConfig.roomRows, SimConfig.roomColumns)
   for (row <- 0 to world.height - 1; col <- 0 to world.width - 1)
-    world.update(row, col, new Situation(0, 0, 0))
+    world.update(row, col, new Situation(0, 0, 0, 0))
   var history: List[Situation] = Nil
   var historyContinues = true
 
@@ -33,11 +34,12 @@ object EpidemyDisplay extends EpidemySimulator with Application {
     for (p <- persons) {
       historyContinues = historyContinues || (p.infected && !p.immune)
     }
-    val ns = new Situation(0, 0, 0)
+    val ns = new Situation(0, 0, 0, 0)
     for (s <- world) {
       ns.healthy += s.healthy
       ns.sick += s.sick
       ns.immune += s.immune
+      ns.dead += s.dead
     }
     history = ns :: history
   }
@@ -64,21 +66,23 @@ object EpidemyDisplay extends EpidemySimulator with Application {
     val roomDimension = new Dimension(roomSize + 1, roomSize + 1)
     setPreferredSize(roomDimension)
     var situation: Situation = null
-    def sick = situation.sick min totalCount
-    def healthy = (sick + situation.healthy) min totalCount
+    def dead = situation.dead min totalCount
+    def sick = (dead + situation.sick) min totalCount
+    def healthy = (dead + situation.healthy) min totalCount
     def immune = (healthy + situation.immune) min totalCount
     override def paintComponent(g: Graphics) {
       val graph = g.asInstanceOf[Graphics2D]
-      graph.setColor(Color.WHITE)
+      graph.setColor(Color.GRAY)
       graph.drawPolyline(Array(0, 0, doorWallSize), Array(doorWallSize, 0, 0), 3)
       graph.drawPolyline(Array(doorWallSize + doorSize, roomSize, roomSize), Array(0, 0, doorWallSize), 3)
       graph.drawPolyline(Array(roomSize, roomSize, doorWallSize + doorSize), Array(doorWallSize + doorSize, roomSize, roomSize), 3)
       graph.drawPolyline(Array(doorWallSize, 0, 0), Array(roomSize, roomSize, doorWallSize + doorSize), 3)
       for (row <- 0 until lineCount; col <- 0 until lineCount) {
         def color(state: Int) = (state / lineCount) > row || ((state / lineCount) == row && (state % lineCount) > col)
-        if (color(sick)) graph.setColor(Color.RED)
+        if      (color(dead))    graph.setColor(Color.WHITE)
+        else if (color(sick))    graph.setColor(Color.RED)
         else if (color(healthy)) graph.setColor(Color.GREEN)
-        else if (color(immune)) graph.setColor(Color.YELLOW)
+        else if (color(immune))  graph.setColor(Color.YELLOW)
         else graph.setColor(Color.DARK_GRAY)
         graph.drawOval(roomBorderSize + 1 + (col * (personSize + interPersonSize)), roomBorderSize + 1 + (row * (personSize + interPersonSize)), personSize, personSize)
       }
@@ -109,31 +113,41 @@ object EpidemyDisplay extends EpidemySimulator with Application {
             getHeight - ((getHeight - 3) * (count.toDouble / SimConfig.population.toDouble)).toInt - 2
           def advance(index: Int): Int =
             getWidth - (advanceStep * ((index + 1.0))).toInt
+          val deadPoly = new Polygon()
           val sickPoly = new Polygon()
           val immunePoly = new Polygon()
           var prevStep = -1
           for ((s, i) <- history zip history.indices) {
-            val sick = proportion(s.sick)
-            val immune = proportion(s.sick + s.immune)
+            val dead   = proportion(s.dead)
+            val sick   = proportion(s.dead + s.sick)
+            val immune = proportion(s.dead + s.sick + s.immune)
             val step = advance(i) - 2
             if (prevStep != step) {
+              deadPoly.addPoint(step, dead)
               sickPoly.addPoint(step, sick)
               immunePoly.addPoint(step, immune)
             }
             prevStep = step
           }
+          deadPoly.addPoint(1, getHeight - 2)
+          deadPoly.addPoint(getWidth - 2, getHeight - 2)
+          deadPoly.addPoint(getWidth - 2, proportion(history.head.dead))
           sickPoly.addPoint(1, getHeight - 2)
           sickPoly.addPoint(getWidth - 2, getHeight - 2)
-          sickPoly.addPoint(getWidth - 2, proportion(history.head.sick))
+          sickPoly.addPoint(getWidth - 2, proportion(history.head.dead + history.head.sick))
           immunePoly.addPoint(1, getHeight - 2)
           immunePoly.addPoint(getWidth - 2, getHeight - 2)
-          immunePoly.addPoint(getWidth - 2, proportion(history.head.sick + history.head.immune))
+          immunePoly.addPoint(getWidth - 2, proportion(history.head.dead + history.head.sick + history.head.immune))
+
           graph.setColor(Color.GREEN)
           graph.fill(new Rectangle(getWidth, graphHeight))
+
           graph.setColor(Color.YELLOW)
           graph.fillPolygon(immunePoly)
           graph.setColor(Color.RED)
           graph.fillPolygon(sickPoly)
+          graph.setColor(Color.WHITE)
+          graph.fillPolygon(deadPoly)
         }
         graph.setColor(Color.WHITE)
         graph.drawRect(0, 0, getWidth -1, graphHeight - 1)
@@ -159,7 +173,8 @@ object EpidemyDisplay extends EpidemySimulator with Application {
       def actionPerformed(event: ActionEvent) {
         if (!history.isEmpty) setText("On day " + countTime + ", " +
                                       history.head.healthy + " healthy, " +
-                                      history.head.sick + " sick/dead, " +
+                                      history.head.sick + " sick, " +
+                                      history.head.dead + " dead, " +
                                       history.head.immune + " immune.")
         if (currentTime <= countTime) {
           assert(hasStep)
@@ -169,7 +184,7 @@ object EpidemyDisplay extends EpidemySimulator with Application {
           frame.repaint()
           next
           val previousTime = currentTime
-          println("agenda has " + agenda.length + " items o/ head.time = " + agenda.head.time)
+          //println("agenda has " + agenda.length + " items o/ head.time = " + agenda.head.time)
           while (!agenda.isEmpty && agenda.head.time == previousTime) next
         }
         else if (historyContinues && !history.isEmpty) history = history.head :: history
