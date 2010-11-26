@@ -46,10 +46,10 @@ class EpidemySimulator extends Simulator {
     val deathRate = 0.25
     val infectionRate = 0.4
 
-    val airplanes = true
+    val airplanes = false
     val airplaneProbability = 0.01
 
-    val chosenFew = true
+    val chosenFew = false
     val vipRate = 0.05
     
     val reduceMobility = false
@@ -87,13 +87,8 @@ class EpidemySimulator extends Simulator {
     })
   }
 
-  (0 until population) foreach(x => {
-      val person = new Person(x)
-      persons = person :: persons
-  })
-
   class Person (val id: Int) {
-    var infected = false
+    var infected = (random <= prevalenceRate)
     var sick = false
     var immune = false
     var dead = false
